@@ -8,7 +8,8 @@ from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 from thop import profile
 
 
-class Mlp(nn.Module):
+
+class Mlp(nn.Module): #Feed forward layers, gives output of shape equal to out_features(or in_features if out_features=None)
     def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
         super().__init__()
         out_features = out_features or in_features
@@ -26,14 +27,15 @@ class Mlp(nn.Module):
         x = self.drop(x)
         return x
 
-def window_partition(x, window_size):
+
+def window_partition(x, window_size): # reutrns image with window partition
 
     B, H, W, C = x.shape
     x = x.view(B, H // window_size, window_size, W // window_size, window_size, C)
     windows = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(-1, window_size, window_size, C)
     return windows
 
-def window_reverse(windows, window_size, H, W):
+def window_reverse(windows, window_size, H, W): #  reutrns image from window partitions
 
     B = int(windows.shape[0] / (H * W / window_size / window_size))
     x = windows.view(B, H // window_size, W // window_size, window_size, window_size, -1)
@@ -252,9 +254,10 @@ class ContextAwareTransformer(nn.Module):
         x = shortcut + self.drop_path(x)
         x = x + self.drop_path(self.mlp(self.norm2(x)))
         # local context
-        lc = self.lce(lcf)
-        lc = lc.view(B, C, H * W).permute(0, 2, 1)
-        x = lc + x
+        # lc = self.lce(lcf)   ##local contex extractor(CNN)
+        # lc = lc.view(B, C, H * W).permute(0, 2, 1)
+        # x = lc + x
+        
 
         return x
 
@@ -483,7 +486,7 @@ class HDRTransformer(nn.Module):
         # spatial attention module
         self.att_module_l = SpatialAttentionModule(embed_dim)
         self.att_module_h = SpatialAttentionModule(embed_dim)
-        self.conv_first = nn.Conv2d(embed_dim * 3, embed_dim, 3, 1, 1)
+        self.conv_first = nn.Conv2d(embed_dim * 2, embed_dim, 3, 1, 1)
         ################################### 2. HDR Reconstruction Network ###################################
         self.num_layers = len(depths)
         self.embed_dim = embed_dim
@@ -583,19 +586,38 @@ class HDRTransformer(nn.Module):
         x = self.patch_unembed(x, x_size)
         return x
 
-    def forward(self, x1, x2, x3):
+    # def forward(self, x1, x2, x3):
+    #     # feature extraction network
+    #     # coarse feature
+    #     f1 = self.conv_f1(x1)
+    #     f2 = self.conv_f2(x2)
+    #     f3 = self.conv_f3(x3)
+
+    #     # spatial feature attention 
+    #     f1_att_m = self.att_module_h(f1, f2)
+    #     f1_att = f1 * f1_att_m
+    #     f3_att_m = self.att_module_l(f3, f2)
+    #     f3_att = f3 * f3_att_m
+    #     x = self.conv_first(torch.cat((f1_att, f2, f3_att), dim=1))
+
+    #     # CTBs for HDR reconstruction
+    #     res = self.conv_after_body(self.forward_features(x) + x)
+    #     x = self.conv_last(f2 + res)
+    #     x = torch.sigmoid(x)
+    #     return x
+
+    def forward(self, x1, x2):
         # feature extraction network
         # coarse feature
         f1 = self.conv_f1(x1)
         f2 = self.conv_f2(x2)
-        f3 = self.conv_f3(x3)
+        
 
         # spatial feature attention 
         f1_att_m = self.att_module_h(f1, f2)
         f1_att = f1 * f1_att_m
-        f3_att_m = self.att_module_l(f3, f2)
-        f3_att = f3 * f3_att_m
-        x = self.conv_first(torch.cat((f1_att, f2, f3_att), dim=1))
+        
+        x = self.conv_first(torch.cat((f1_att, f2), dim=1))
 
         # CTBs for HDR reconstruction
         res = self.conv_after_body(self.forward_features(x) + x)

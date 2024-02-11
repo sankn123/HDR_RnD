@@ -8,7 +8,7 @@ import logging
 import argparse
 
 from torch.utils.data import DataLoader
-from skimage.measure.simple_metrics import compare_psnr
+from skimage.metrics import peak_signal_noise_ratio
 from tqdm import tqdm
 
 from dataset.dataset_sig17 import SIG17_Test_Dataset
@@ -50,7 +50,7 @@ def main():
     }
     model = model_dict[args.model_arch].to(device)
     model = nn.DataParallel(model)
-    model.load_state_dict(torch.load(args.pretrained_model)['state_dict'])
+    model.load_state_dict(torch.load(args.pretrained_model, map_location=torch.device('cpu') )['state_dict'])
     model.eval()
 
     datasets = SIG17_Test_Dataset(args.dataset_dir, args.patch_size)
@@ -63,10 +63,10 @@ def main():
         pred_hdr = pred_img.copy()
         pred_hdr = pred_hdr.transpose(1, 2, 0)[..., ::-1]
         # psnr-l and psnr-\mu
-        scene_psnr_l = compare_psnr(label, pred_img, data_range=1.0)
+        scene_psnr_l = peak_signal_noise_ratio(label, pred_img, data_range=1.0)
         label_mu = range_compressor(label)
         pred_img_mu = range_compressor(pred_img)
-        scene_psnr_mu = compare_psnr(label_mu, pred_img_mu, data_range=1.0)
+        scene_psnr_mu = peak_signal_noise_ratio(label_mu, pred_img_mu, data_range=1.0)
         # ssim-l
         pred_img = np.clip(pred_img * 255.0, 0., 255.).transpose(1, 2, 0)
         label = np.clip(label * 255.0, 0., 255.).transpose(1, 2, 0)

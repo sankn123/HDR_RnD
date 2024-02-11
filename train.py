@@ -17,14 +17,16 @@ def get_args():
     parser.add_argument("--dataset_dir", type=str, default='./data',
                         help='dataset directory'),
     parser.add_argument('--patch_size', type=int, default=256),
-    parser.add_argument("--sub_set", type=str, default='sig17_training_crop128_stride64',
+    parser.add_argument("--sub_set", type=str, default='sig17_training_crop256_stride128',
                         help='dataset directory')
     parser.add_argument('--logdir', type=str, default='./checkpoints',
                         help='target log directory')
     parser.add_argument('--num_workers', type=int, default=8, metavar='N',
                         help='number of workers to fetch data (default: 8)')
     # Training
-    parser.add_argument('--resume', type=str, default=None,
+    # parser.add_argument('--resume', type=str, default='checkpoints/pretrained_model.pth',
+    #                     help='load model from a .pth file')
+    parser.add_argument('--resume', type=str, default=False,
                         help='load model from a .pth file')
     parser.add_argument('--no_cuda', action='store_true', default=False,
                         help='disables CUDA training')
@@ -60,10 +62,13 @@ def train(args, model, device, train_loader, optimizer, epoch, criterion):
     end = time.time()
     for batch_idx, batch_data in enumerate(train_loader):
         data_time.update(time.time() - end)
+        # 3 input ldr
         batch_ldr0, batch_ldr1, batch_ldr2 = batch_data['input0'].to(device), batch_data['input1'].to(device), \
                                              batch_data['input2'].to(device)
         label = batch_data['label'].to(device)
-        pred = model(batch_ldr0, batch_ldr1, batch_ldr2)
+        # pred = model(batch_ldr0, batch_ldr1, batch_ldr2)
+        
+        pred = model(batch_ldr0, batch_ldr2)
         loss = criterion(pred, label)
         optimizer.zero_grad()
         loss.backward()
@@ -93,7 +98,8 @@ def validation(args, model, device, val_loader, optimizer, epoch, criterion, cur
         for batch_idx, batch_data in enumerate(val_loader):
             batch_ldr0, batch_ldr1, batch_ldr2 = batch_data['input0'].to(device), batch_data['input1'].to(device), batch_data['input2'].to(device)
             label = batch_data['label'].to(device)
-            pred = model(batch_ldr0, batch_ldr1, batch_ldr2)
+            # pred = model(batch_ldr0, batch_ldr1, batch_ldr2)
+            pred = model(batch_ldr0, batch_ldr2)
             loss = criterion(pred, label)
 
             psnr = batch_psnr(pred, label, 1.0)
@@ -127,7 +133,8 @@ def test_single_img(model, img_dataset, device):
             batch_ldr0, batch_ldr1, batch_ldr2 = batch_data['input0'].to(device), \
                                                  batch_data['input1'].to(device), \
                                                  batch_data['input2'].to(device)
-            output = model(batch_ldr0, batch_ldr1, batch_ldr2)
+            # output = model(batch_ldr0, batch_ldr1, batch_ldr2)
+            output = model(batch_ldr0, batch_ldr2)
             img_dataset.update_result(torch.squeeze(output.detach().cpu()).numpy().astype(np.float32))
     pred, label = img_dataset.rebuild_result()
     return pred, label
@@ -141,12 +148,12 @@ def test(args, model, device, optimizer, epoch, cur_psnr, **kwargs):
     ssim_mu = AverageMeter()
     for idx, img_dataset in enumerate(test_datasets):
         pred_img, label = test_single_img(model, img_dataset, device)
-        scene_psnr_l = compare_psnr(label, pred_img, data_range=1.0)
+        scene_psnr_l = peak_signal_noise_ratio(label, pred_img, data_range=1.0)
 
         label_mu = range_compressor(label)
         pred_img_mu = range_compressor(pred_img)
 
-        scene_psnr_mu = compare_psnr(label_mu, pred_img_mu, data_range=1.0)
+        scene_psnr_mu = peak_signal_noise_ratio(label_mu, pred_img_mu, data_range=1.0)
         pred_img = np.clip(pred_img * 255.0, 0., 255.).transpose(1, 2, 0)
         label = np.clip(label * 255.0, 0., 255.).transpose(1, 2, 0)
         pred_img_mu = np.clip(pred_img_mu * 255.0, 0., 255.).transpose(1, 2, 0)
@@ -217,7 +224,7 @@ def main():
     if args.resume:
         if os.path.isfile(args.resume):
             print("===> Loading checkpoint from: {}".format(args.resume))
-            checkpoint = torch.load(args.resume)
+            checkpoint = torch.load(args.resume,map_location=torch.device('cpu'))
             args.start_epoch = checkpoint['epoch']
             model.load_state_dict(checkpoint['state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer'])
